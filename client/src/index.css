@@ -1,0 +1,30 @@
+/*
+ * Vite's default template ships a `body { display: flex; place-items:
+ * center; min-height: 100vh }` — great for the little centered counter
+ * demo it's designed for, actively harmful for an app like this one that
+ * builds its own full-page layouts (Lobby, the editor). That's very
+ * likely what was causing the scrollbar/overflow issue: my own pages
+ * were trying to size themselves to the viewport while sitting inside a
+ * parent that was ALSO trying to flex-center and size them. This file
+ * replaces that with a plain, boring reset instead.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background-color: #1e1e1e;
+}
