@@ -97,7 +97,7 @@ export function registerRoomHandler(
       // this `leave-room` happens to get processed first (this is
       // exactly the shape of thing React 18 StrictMode's dev-mode
       // double-invoke can trigger — join, leave, join again, all fired
-      // back-to-back on the same socket). Without this, I could destroy
+      // back-to-back on the same socket). Without this, I could end up destroying
       // a doc that a near-simultaneous rejoin is about to need. Costs
       // nothing extra when the room really is empty.
       setImmediate(() => {

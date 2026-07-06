@@ -10,14 +10,24 @@ A production-quality collaborative code editor with real-time multi-user editing
 
 ---
 
+## Live Demo
+
+**[→ Try it live](http://129.146.100.26/)**
+
+Hosted on Oracle Cloud (Ubuntu, Nginx reverse proxy, PM2 process management). Feel free to open it in two tabs and try editing the same room from both.
+
+---
+
 ## Features
 
 - **Real-time collaboration** — Multiple users edit the same document simultaneously with zero conflicts
 - **CRDT-based sync** — Uses Yjs for mathematically guaranteed eventual consistency; no central lock or conflict arbiter needed
 - **Live room lobby** — Browse active rooms with live user counts before joining; polls every 5 seconds
+- **Multi-language support** — Rooms can be created as JavaScript, TypeScript, Python, Java, or Plain Text; the language is locked in at creation and applies to everyone who joins
+- **Safe room deletion** — Permanently delete a room once it's empty, with a confirmation prompt warning to back up content first; blocked entirely while anyone is still active in it
 - **Layered persistence** — Redis hot cache for sub-millisecond reads on join; SQLite for durable storage after 30 seconds of edit inactivity
 - **Graceful shutdown** — Pending writes are flushed to SQLite on SIGINT/SIGTERM so no edits are lost
-- **Monaco Editor** — Full VS Code editing experience with syntax highlighting and TypeScript support
+- **Monaco Editor** — Full VS Code editing experience with syntax highlighting per language
 - **Modular TypeScript backend** — Service layer, repository pattern, and typed Socket.IO handlers throughout
 
 ---
@@ -28,12 +38,12 @@ A production-quality collaborative code editor with real-time multi-user editing
 ┌──────────────────────────────────────────────────────────────┐
 │                          Browser                             │
 │                                                              │
-│   ┌─────────────────┐       ┌──────────────────────────┐     │
-│   │   Lobby Page    │       │       Editor Page        │     │
-│   │  (Room List)    │       │  Monaco + Yjs CRDT       │     │
-│   └────────┬────────┘       └────────────┬─────────────┘     │
-│            │ REST GET /api/rooms          │ WebSocket (Yjs)  │
-└────────────┼──────────────────────────────┼──────────────-───┘
+│   ┌─────────────────┐        ┌──────────────────────────┐    │
+│   │   Lobby Page    │        │       Editor Page        │    │
+│   │  (Room List)    │        │  Monaco + Yjs CRDT       │    │
+│   └────────┬────────┘        └────────────┬─────────────┘    │
+│            │ REST GET/DELETE /api/rooms   │ WebSocket (Yjs)  │
+└────────────┼──────────────────────────────┼──────────────────┘
              │                              │
              ▼                              ▼
 ┌──────────────────────────────────────────────────────────────┐
@@ -60,6 +70,7 @@ A production-quality collaborative code editor with real-time multi-user editing
     │   (Hot Cache)   │         │  (Durable Storage)   │
     │  · Yjs state    │         │  · Full Yjs snapshot │
     │  · Room index   │         │  · Flushed on idle   │
+    │  · Language     │         │  · Language          │
     └─────────────────┘         └──────────────────────┘
 ```
 
@@ -109,18 +120,18 @@ project/
 │   └── src/
 │       ├── components/
 │       │   ├── CollaborativeEditor.tsx   # Monaco + Yjs binding
-│       │   ├── RoomList.tsx              # Active rooms display
-│       │   └── RoomForm.tsx              # Create / join input
+│       │   ├── RoomList.tsx              # Active rooms display + delete control
+│       │   └── RoomForm.tsx              # Create / join input + language picker
 │       ├── hooks/
 │       │   ├── useCollaboration.ts       # Yjs doc lifecycle + socket sync
-│       │   └── useRooms.ts               # REST polling for lobby
+│       │   └── useRooms.ts               # REST polling for lobby + delete calls
 │       ├── pages/
 │       │   ├── Lobby.tsx                 # Room browser page
 │       │   └── EditorPage.tsx            # Editor route wrapper
 │       ├── services/
 │       │   └── socketService.ts          # Typed Socket.IO singleton
 │       ├── types/
-│       │   └── index.ts                  # Shared types
+│       │   └── index.ts                  # Shared types + language options
 │       └── App.tsx                       # Router root
 │
 └── server/                          # Node.js backend
@@ -129,7 +140,7 @@ project/
         │   ├── redis.ts                  # Redis connection singleton
         │   └── database.ts               # SQLite setup + schema migration
         ├── models/
-        │   └── types.ts                  # Shared TypeScript interfaces
+        │   └── types.ts                  # Shared TypeScript interfaces (rooms, documents, language)
         ├── repositories/
         │   ├── RedisRepository.ts        # All Redis I/O
         │   └── DatabaseRepository.ts     # All SQLite I/O
@@ -144,7 +155,7 @@ project/
         │   │   └── connectionHandler.ts  # disconnect cleanup
         │   └── index.ts                  # Socket.IO server factory
         ├── routes/
-        │   └── roomRoutes.ts             # GET /api/rooms
+        │   └── roomRoutes.ts             # GET /api/rooms · DELETE /api/rooms/:id
         ├── app.ts                        # Express app factory
         └── index.ts                      # Entry point + graceful shutdown
 ```
@@ -276,6 +287,18 @@ VITE v8.x.x  ready in Xms
 Navigate to **http://localhost:5173** in your browser.
 
 To test real-time collaboration, open the same URL in a second browser tab or window. Create a room from one tab and join it from the other — edits will sync in real time.
+
+---
+
+## Usage Notes
+
+### Choosing a room's language
+
+When creating a new room, pick a language from the dropdown in the lobby: JavaScript, TypeScript, Python, Java, or Plain Text. That choice is locked in permanently for that room the moment it's created — every subsequent person who joins gets the same language, and there's no way to change it afterward (a deliberate simplification; see the comments in `DocumentService.ts` for why). Joining a room that already exists ignores whatever language you had selected, since the room's original language always wins.
+
+### Deleting a room
+
+Each room in the lobby has a Delete option, but it's only ever available when the room is completely empty — if anyone is currently active in it, the button is replaced with a small "in use" indicator instead of being merely disabled, so there's nothing to accidentally click. Deleting is permanent: it wipes the room's content from memory, Redis, and SQLite in one shot, and the confirmation prompt exists specifically to remind you to copy anything worth keeping first.
 
 ---
 

@@ -11,7 +11,7 @@ import { socketService } from '../services/socketService';
  * Yjs fires an 'update' event every time the doc changes, full stop —
  * it doesn't care if that change came from a user typing locally or from a
  * network message that just arrived from someone else. Left unchecked,
- * that means: person A types → update fires → I broadcast it to the
+ * that means: person A types → update fires → that gets broadcast to the
  * server → server relays it to person B → person B applies it →
  * person B's update fires too → and now person B's code is trying to
  * send person A's own edit right back to the server. Nothing breaks

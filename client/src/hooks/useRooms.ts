@@ -40,7 +40,7 @@ export function useRooms() {
 
   /**
    * Permanently deletes a room. The server refuses if it currently has
-   * active users (409), which surface as a returned error string
+   * active users (409), which I surface as a returned error string
    * rather than throwing, so the caller can show it inline if needed.
    */
   const deleteRoom = useCallback(async (roomId: string): Promise<string | null> => {

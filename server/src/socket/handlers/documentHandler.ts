@@ -10,7 +10,7 @@ export function registerDocumentHandler(
   /**
    * Receives an incremental Yjs update from one client.
    *
-   * The update is a Uint8Array (binary CRDT delta). I:
+   * The update is a Uint8Array (binary CRDT delta). Here's what happens with it:
    *   1. Apply it to the server-side Yjs doc (keeps the server in sync)
    *   2. Broadcast it to every other client in the room
    *   3. Schedule a debounced SQLite flush via PersistenceService
