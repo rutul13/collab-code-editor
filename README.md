@@ -12,7 +12,7 @@ A production-quality collaborative code editor with real-time multi-user editing
 
 ## Live Demo
 
-**[→ Try it live](http://129.146.100.26/)**
+**[→ Try it live](https://collab-code-editor.eternalglitch.com/)**
 
 Hosted on Oracle Cloud (Ubuntu, Nginx reverse proxy, PM2 process management). Feel free to open it in two tabs and try editing the same room from both.
 
