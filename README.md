@@ -185,7 +185,7 @@ redis-cli ping    # should respond with PONG if Redis is running
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/rutul6024us-droid/collab-code-editor.git
+git clone https://github.com/rutul13/collab-code-editor.git 
 cd collab-editor
 ```
 
