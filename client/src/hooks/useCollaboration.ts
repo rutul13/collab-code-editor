@@ -38,9 +38,26 @@ const REMOTE_ORIGIN = Symbol('remote-sync');
  * Owns the entire collaboration lifecycle for whatever room the user is
  * currently in: spins up a Yjs doc, wires it to the socket, and tears
  * everything down cleanly on unmount. `bindEditor` is the bridge to
- * Monaco — call it from the editor's onMount callback and from that
- * point on, typing in Monaco IS editing the Yjs doc (that's what
- * MonacoBinding does under the hood).
+ * Monaco — call it from the editor's onMount callback.
+ *
+ * IMPORTANT ordering note (this was the source of a genuinely nasty bug):
+ * the Monaco editor mounting and the server's `yjs-init` reply are two
+ * completely independent async events with no guaranteed order. Monaco
+ * mounts on React's render schedule; yjs-init arrives on a network
+ * round-trip. If I construct the MonacoBinding while the Yjs doc is empty
+ * and THEN apply the init state a moment later (or vice-versa), the
+ * binding and the doc briefly disagree about the document's contents, and
+ * MonacoBinding "reconciles" that disagreement by emitting its own Yjs
+ * ops — which then get broadcast to everyone else and corrupt the shared
+ * document (characters teleporting, edits duplicating, backspaces not
+ * syncing). On localhost the round-trip is ~0ms so the race window is
+ * microscopic and it basically never fires; behind a real network (a
+ * proxy/CDN adding 30-80ms) the window is wide enough that it fires all
+ * the time. That's why it only showed up once the app was deployed.
+ *
+ * The fix: never construct the binding until BOTH (a) the editor has
+ * mounted and (b) yjs-init has been applied. Whichever lands second is
+ * the one that actually triggers the bind. See `tryBind` below.
  *
  * @param requestedLanguage Passed straight through to the server on
  *   join — only has any effect if this room doesn't exist yet.
@@ -48,6 +65,11 @@ const REMOTE_ORIGIN = Symbol('remote-sync');
 export function useCollaboration(roomId: string, requestedLanguage?: string) {
   const ydocRef    = useRef<Y.Doc | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
+
+  // The two things that must both be ready before I can safely bind.
+  const editorRef  = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const initDoneRef = useRef(false);
+
   const [userCount, setUserCount] = useState(1);
   const [isSynced,  setIsSynced]  = useState(false);
   const [language,  setLanguage]  = useState('plaintext');
@@ -55,6 +77,7 @@ export function useCollaboration(roomId: string, requestedLanguage?: string) {
   useEffect(() => {
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
+    initDoneRef.current = false;
 
     // Outgoing — anything typed locally gets broadcast, anything tagged
     // REMOTE_ORIGIN (see the big comment above) gets skipped.
@@ -69,10 +92,17 @@ export function useCollaboration(roomId: string, requestedLanguage?: string) {
     // whatever language the room actually got created with (which might
     // not be what I requested, if the room already existed — see the
     // big block comment on the server's DocumentService for why).
+    //
+    // Crucially: I mark init as done and THEN try to bind. If the editor
+    // already mounted while I were waiting for this, tryBind() will now
+    // succeed. If it hasn't mounted yet, bindEditor() will call tryBind()
+    // when it does.
     const offInit = socketService.onYjsInit((state, resolvedLanguage) => {
       Y.applyUpdate(ydoc, state, REMOTE_ORIGIN);
+      initDoneRef.current = true;
       setLanguage(resolvedLanguage);
       setIsSynced(true);
+      tryBind();
     });
 
     // Every subsequent edit from anyone else in the room arrives here.
@@ -99,6 +129,8 @@ export function useCollaboration(roomId: string, requestedLanguage?: string) {
       ydoc.off('update', onLocalUpdate);
       bindingRef.current?.destroy();
       bindingRef.current = null;
+      editorRef.current = null;
+      initDoneRef.current = false;
       ydoc.destroy();
       ydocRef.current = null;
     };
@@ -110,23 +142,36 @@ export function useCollaboration(roomId: string, requestedLanguage?: string) {
   }, [roomId]);
 
   /**
-   * Hands the Yjs text type over to Monaco. This is genuinely almost the
-   * entire integration — MonacoBinding does the heavy lifting of keeping
-   * the editor's model and the Yjs doc in sync in both directions.
-   * Call this from Monaco's onMount.
+   * Constructs the MonacoBinding, but ONLY once both prerequisites are
+   * met: the editor is mounted AND the initial doc state has been applied.
+   * Called from two places — bindEditor() (when the editor mounts) and the
+   * onYjsInit handler (when init lands) — so whichever happens second is
+   * the one that actually wires things up. Idempotent: the initDone /
+   * editor / existing-binding guards mean calling it early or twice is a
+   * harmless no-op.
    */
-  function bindEditor(editor: monaco.editor.IStandaloneCodeEditor): void {
-    const ydoc  = ydocRef.current;
+  function tryBind(): void {
+    if (bindingRef.current) return;          // already bound
+    if (!initDoneRef.current) return;        // init hasn't landed yet
+    const editor = editorRef.current;
+    const ydoc   = ydocRef.current;
+    if (!editor || !ydoc) return;            // editor hasn't mounted yet
     const model = editor.getModel();
-    if (!ydoc || !model) return;
-
-    // React StrictMode calls effects twice in dev, which can leave a
-    // stale binding around from the "throwaway" first mount — destroying
-    // any existing binding before creating a new one keeps that safe.
-    bindingRef.current?.destroy();
+    if (!model) return;
 
     const ytext = ydoc.getText('content');
     bindingRef.current = new MonacoBinding(ytext, model, new Set([editor]));
+  }
+
+  /**
+   * Called from Monaco's onMount. We DON'T bind here directly anymore —
+   * I just record the editor and defer to tryBind(), which will only
+   * actually construct the binding once yjs-init has also completed.
+   * See the big ordering note on the hook above for why this matters.
+   */
+  function bindEditor(editor: monaco.editor.IStandaloneCodeEditor): void {
+    editorRef.current = editor;
+    tryBind();
   }
 
   return { bindEditor, userCount, isSynced, language };
