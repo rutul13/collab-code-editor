@@ -8,8 +8,8 @@ interface JoinRoomPayload {
 }
 
 /**
- * holdover from before language selection existed — back then join-room
  * Accepts a plain string OR an object shape. The string branch is a
+ * holdover from before language selection existed — back then join-room
  * just took a bare roomId. Kept it working rather than ripping it out,
  * mostly so I wouldn't have to worry about breaking anything if some
  * old cached client bundle, or a manual test with curl/Postman, sent
@@ -69,7 +69,13 @@ export function registerRoomHandler(
     // for anything that already exists.
     const fullState        = await docService.getFullState(roomId, language);
     const resolvedLanguage = await docService.getLanguage(roomId);
-    socket.emit('yjs-init', { state: fullState, language: resolvedLanguage });
+    
+    // base64 string, not raw binary — same anti-corruption reasoning as
+    // the yjs-update path in documentHandler.ts. See the big comment there.
+    socket.emit('yjs-init', {
+      state: Buffer.from(fullState).toString('base64'),
+      language: resolvedLanguage,
+    });
 
     console.log(
       `[Socket] ${socket.id} joined "${roomId}" (${resolvedLanguage}). Users online: ${count}`,

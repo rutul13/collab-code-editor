@@ -56,7 +56,13 @@ class SocketService {
   }
 
   sendYjsUpdate(roomId: string, update: Uint8Array): void {
-    this.socket.emit('yjs-update', { roomId, update });
+    // Encode to base64 so this rides as a single text frame — avoids
+    // Socket.IO's binary placeholder-frame splitting, which Cloudflare's
+    // compression was intermittently corrupting. See documentHandler.ts.
+    let binary = '';
+    for (let i = 0; i < update.length; i++) binary += String.fromCharCode(update[i]);
+    const encoded = btoa(binary);
+    this.socket.emit('yjs-update', { roomId, update: encoded });
   }
 
   // ── Listeners ─────────────────────────────────────────────────────────────
@@ -67,16 +73,18 @@ class SocketService {
 
   /** Fires once per join, with the full doc state and its resolved language. */
   onYjsInit(cb: (state: Uint8Array, language: string) => void): () => void {
-    const handler = (payload: { state: ArrayBuffer; language: string }) => {
-      cb(new Uint8Array(payload.state), payload.language);
+    const handler = (payload: { state: string; language: string }) => {
+      // Decode the base64 string back into the Yjs byte array.
+      const bytes = Uint8Array.from(atob(payload.state), (c) => c.charCodeAt(0));
+      cb(bytes, payload.language);
     };
     this.socket.on('yjs-init', handler);
     return () => this.socket.off('yjs-init', handler);
   }
 
   onYjsUpdate(cb: (update: Uint8Array) => void): () => void {
-    const handler = (data: ArrayBuffer) =>
-      cb(new Uint8Array(data));
+    const handler = (data: string) =>
+      cb(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)));
     this.socket.on('yjs-update', handler);
     return () => this.socket.off('yjs-update', handler);
   }
